@@ -1,2 +1,3 @@
-# mundo-talk-demo
-Demonstração estática limitada do Mundo Talk: três aulas A1, amostras B1/C1 e Emily simulada. Sem login ou banco.
+# Mundo Talk — demonstração limitada
+
+Três aulas A1, amostras curtas B1/C1 e Emily com diálogos preparados. Somente arquivos estáticos; sem autenticação, banco ou IA ao vivo. Rascunho fictício salvo apenas neste navegador. Não é o aplicativo completo nem certificação CEFR.
