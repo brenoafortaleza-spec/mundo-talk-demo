@@ -1,0 +1,23 @@
+:root{--ink:#edf7ff;--surface:#172b40;--line:#526b82;--muted:#b5ccdf;--accent:#ffb198}
+body{margin:0}header,main{max-width:61rem;margin:auto;padding:.75rem 1rem}a{color:inherit}.pilot-index{font:16px/1.5 system-ui;color:#edf7ff;background:#0e1b29;color-scheme:dark}.pilot-index a{color:var(--accent)}button,input,textarea{font:inherit}button{border:1px solid var(--line);border-radius:.65rem;padding:.4rem .75rem;background:var(--surface);color:var(--ink);min-height:44px}button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}textarea{display:block;width:100%;max-width:38rem;box-sizing:border-box;padding:.55rem}[hidden]{display:none!important}
+.pilot-links{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin:.65rem 0}.pilot-lessons{padding-left:1.5rem}.pilot-lessons li{margin-bottom:.65rem}.pilot-lessons a{font-weight:700}.pilot-writing{margin:1rem 0;padding:1rem;border:1px solid var(--line);border-radius:.65rem}
+.mt-vocabulary .c-panel{padding:.75rem;margin:.5rem 0;border:1px solid var(--line);border-radius:.65rem}.mt-vocabulary .c-teacher{display:flex;gap:.65rem;align-items:center}.mt-vocabulary .c-lesson-emily{background:#164788 url('./emily.webp') 0 0/200% 200%;flex:0 0 44px;height:44px;border-radius:.45rem}.mt-vocabulary .c-muted{color:var(--muted)}.mt-vocabulary label{display:block}.mt-vocabulary input{padding:.5rem;color:var(--ink);background:#122436;border:1px solid var(--line);border-radius:.4rem}.mt-vocabulary progress{width:100%}.mt-vocabulary h2,.mt-vocabulary h3,.mt-vocabulary p{overflow-wrap:anywhere}
+
+.course-app .mt-v-heading{border:0;margin:0;max-width:none}.mt-vocabulary{color-scheme:dark}.mt-vocabulary label{color:var(--ink)}
+
+.course-app .mt-v-row,.course-app .mt-v-tabs{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.5rem;align-items:center}
+.course-app .mt-v-row button,.course-app .mt-v-tabs button,.course-app .mt-v-lesson-link,.course-app .mt-v-heading button{min-height:44px;white-space:normal;text-align:left}
+.course-app .mt-v-menu{margin-block:1rem}.course-app .mt-v-menu h2{margin-top:0}
+.course-app .mt-v-lesson-link{margin-block:.25rem .75rem;margin-inline-start:.5rem}
+.course-app .mt-vocabulary{box-sizing:border-box;width:min(calc(100% - 1rem),38rem);max-height:min(calc(100dvh - 1rem),46rem);padding:0 1rem 1rem;color:var(--ink,#eaf2fa);background:var(--surface,#172532);border:1px solid var(--line,#546170);border-radius:16px;overscroll-behavior:contain}
+.course-app .mt-vocabulary::backdrop{background:#000a}
+.course-app .mt-v-heading{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding-block:.75rem .5rem;background:inherit}
+.course-app .mt-v-heading h2{margin:0;font-size:clamp(1.1rem,5vw,1.45rem)}
+.course-app .mt-vocabulary :focus-visible{outline:2px solid var(--accent,#ff9b78);outline-offset:2px}
+.course-app .mt-vocabulary [aria-current=page],.course-app .mt-vocabulary [aria-pressed=true]{border-color:var(--accent,#ff9b78)}
+.course-app .mt-vocabulary button[aria-pressed=true]{box-shadow:inset 0 0 0 1px var(--accent,#ff9b78)}
+.course-app .mt-v-entry li+li{margin-top:.75rem}.course-app .mt-v-audio:empty{margin:0}
+.course-app .mt-vocabulary input[type=number]{max-width:8rem}.course-app .mt-vocabulary input[type=search]{width:100%;box-sizing:border-box}
+.course-app .mt-v-inline{display:inline-block;min-height:26px;padding:2px 3px;border:0;background:transparent;color:var(--accent);font:inherit;text-decoration:underline;text-underline-offset:2px;vertical-align:baseline}
+.course-app .mt-v-inline:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.course-app .mt-vocabulary [hidden]{display:none}
