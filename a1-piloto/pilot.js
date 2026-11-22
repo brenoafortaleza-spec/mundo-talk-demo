@@ -206,11 +206,11 @@ function configure(s, newGoal, reviewGoal) {
 }
 function startVocabulary(s, now = new Date()) {
     const today = dateKey(now);
-    if (s.session?.day === today || s.session && s.session.cursor < s.session.cards.length)
+    if (s.session?.cards.length && (s.session.day === today || s.session.cursor < s.session.cards.length))
         return s;
     const due = Object.entries(s.reviews).filter(([, r]) => r.due <= today).sort(([, a], [, b]) => b.lapses - a.lapses || a.due.localeCompare(b.due)).slice(0, s.reviewGoal);
     const cards = due.map(([id]) => ({ id, learn: false }));
-    const newIds = [...new Set([...s.optIn, ...a1_ts_1.words.map(w => w.id)])].filter(id => !s.reviews[id]).slice(0, now.getDay() === 0 || now.getDay() === 6 ? 0 : s.newGoal);
+    const newIds = [...new Set([...s.optIn, ...a1_ts_1.words.map(w => w.id)])].filter(id => !s.reviews[id]).slice(0, (now.getDay() === 0 || now.getDay() === 6) && due.length ? 0 : s.newGoal);
     for (let i = 0; i < newIds.length; i += 3) {
         const batch = newIds.slice(i, i + 3);
         cards.push(...batch.map(id => ({ id, learn: true })), ...batch.map(id => ({ id, learn: false })));
@@ -235,81 +235,116 @@ function finishCard(s, id, remembered, now = new Date()) {
 },"audio":function(require,exports){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.vocabularyAudio = vocabularyAudio;
-/** Only the bundled English clip and, if available, an explicitly local pt-BR voice. */
 function vocabularyAudio(report) {
-    let controller;
-    const stop = () => { controller?.abort(); controller = undefined; };
-    async function play(word, rate, bilingual) {
-        stop();
-        const c = new AbortController();
-        controller = c;
-        const audio = new Audio('./audio/' + encodeURIComponent(word.id) + '.mp3');
-        audio.playbackRate = rate;
-        audio.preservesPitch = true;
-        let ptMissing = false;
-        const clip = () => new Promise(resolve => {
-            let settled = false;
-            const done = (ok) => { if (settled)
-                return; settled = true; clearTimeout(timeout); audio.onended = null; audio.onerror = null; c.signal.removeEventListener('abort', abort); if (!ok)
-                audio.pause(); resolve(ok); };
-            const abort = () => done(false);
-            const timeout = setTimeout(abort, 9000);
-            c.signal.addEventListener('abort', abort, { once: true });
-            audio.currentTime = 0;
-            audio.onended = () => done(true);
-            audio.onerror = abort;
+    let current;
+    let player;
+    const stop = () => { current?.abort(); current = undefined; };
+    const start = () => { stop(); current = new AbortController(); report('Preparando áudio…'); return current.signal; };
+    function clip(media, signal) {
+        return new Promise(resolve => {
+            const finish = (result) => {
+                if (done)
+                    return;
+                done = true;
+                clearTimeout(timer);
+                media.onended = null;
+                media.onerror = null;
+                signal.removeEventListener('abort', abort);
+                if (result !== 'ok')
+                    media.pause();
+                resolve(result);
+            };
+            let done = false;
+            const abort = () => finish('unavailable');
+            const rejected = (error) => finish(error instanceof Error && error.name === 'NotAllowedError' ? 'blocked' : 'unavailable');
+            const timer = setTimeout(abort, 16000);
+            signal.addEventListener('abort', abort, { once: true });
+            media.onended = () => finish('ok');
+            media.onerror = abort;
             try {
-                void audio.play().catch(abort);
+                media.currentTime = 0;
+                void media.play().catch(rejected);
             }
-            catch {
-                abort();
+            catch (error) {
+                rejected(error);
             }
         });
-        const portuguese = () => new Promise(resolve => {
+    }
+    function portuguese(word, rate, signal) {
+        return new Promise(resolve => {
             const synth = window.speechSynthesis;
             const voice = synth?.getVoices().find(v => v.localService && v.lang.toLowerCase().replace('_', '-') === 'pt-br');
             if (!voice || typeof SpeechSynthesisUtterance === 'undefined') {
                 resolve(false);
                 return;
             }
-            const speech = new SpeechSynthesisUtterance(word.senses[0].pt.split(';')[0]);
-            speech.voice = voice;
-            speech.lang = 'pt-BR';
-            speech.rate = rate;
-            let settled = false;
-            const done = (ok) => { if (settled)
-                return; settled = true; clearTimeout(timeout); speech.onend = null; speech.onerror = null; c.signal.removeEventListener('abort', abort); resolve(ok); };
-            const abort = () => { done(false); synth.cancel(); };
-            const timeout = setTimeout(abort, 4500);
-            c.signal.addEventListener('abort', abort, { once: true });
-            speech.onend = () => done(true);
-            speech.onerror = () => done(false);
+            const utterance = new SpeechSynthesisUtterance(word.senses[0].pt.split(';')[0]);
+            utterance.voice = voice;
+            utterance.lang = 'pt-BR';
+            utterance.rate = rate;
+            let done = false;
+            const finish = (ok) => { if (done)
+                return; done = true; clearTimeout(timer); utterance.onend = null; utterance.onerror = null; signal.removeEventListener('abort', abort); resolve(ok); };
+            const abort = () => { finish(false); synth.cancel(); };
+            const timer = setTimeout(abort, 5000);
+            signal.addEventListener('abort', abort, { once: true });
+            utterance.onend = () => finish(true);
+            utterance.onerror = () => finish(false);
             try {
-                synth.speak(speech);
+                synth.speak(utterance);
             }
             catch {
-                done(false);
+                finish(false);
             }
         });
-        const pause = () => new Promise(resolve => {
-            const done = () => { clearTimeout(timer); c.signal.removeEventListener('abort', done); resolve(); };
-            const timer = setTimeout(done, 600);
-            c.signal.addEventListener('abort', done, { once: true });
-        });
-        report('Preparando áudio…');
-        let ok = await clip();
-        if (ok && bilingual && !c.signal.aborted) {
-            ptMissing = !(await portuguese());
-            if (!c.signal.aborted) {
-                await pause();
-                if (!c.signal.aborted)
-                    ok = await clip();
-            }
-        }
-        if (!c.signal.aborted)
-            report(!ok ? 'O áudio não tocou. Tente novamente ou continue pela leitura.' : ptMissing ? 'O português está no texto: nenhuma voz local pt-BR disponível.' : 'Áudio concluído. Você pode ouvir de novo.');
     }
-    return { play, stop };
+    const noTranslation = 'A voz em português não tocou. Confira a tradução na tela ou ative uma voz local Português (Brasil) no aparelho.';
+    async function play(word, rate, bilingual) {
+        const signal = start();
+        // Start the first playback synchronously in the tap handler; reuse the same player for the replay.
+        const media = player ??= new Audio();
+        const path = './audio/' + encodeURIComponent(word.id) + '.mp3';
+        if (media.getAttribute('src') !== path)
+            media.src = path;
+        media.playbackRate = rate;
+        media.preservesPitch = true;
+        let result = await clip(media, signal), translated = true;
+        if (result === 'ok' && bilingual && !signal.aborted) {
+            translated = await portuguese(word, rate, signal);
+            if (!signal.aborted)
+                result = await clip(media, signal);
+        }
+        if (signal.aborted)
+            return;
+        report(result === 'blocked' ? 'O navegador bloqueou a reprodução. Toque no botão de áudio para tentar novamente.' :
+            result === 'unavailable' ? 'O áudio não carregou. Confira a conexão e toque para tentar novamente.' :
+                !translated ? 'O inglês tocou. Se quiser tentar a tradução, toque em “Ouvir só em português”.' : 'Áudio concluído. Você pode ouvir de novo.');
+    }
+    async function translate(word, rate) {
+        const signal = start();
+        const ok = await portuguese(word, rate, signal);
+        if (!signal.aborted)
+            report(ok ? 'Tradução reproduzida. Você pode ouvir de novo.' : noTranslation);
+    }
+    return { stop, play, translate };
+}
+},"daily":function(require,exports){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.emptyPracticeMessage = emptyPracticeMessage;
+const a1_ts_1 = require("./a1.ts");
+const study_ts_1 = require("./study.ts");
+function emptyPracticeMessage(state) {
+    const today = (0, study_ts_1.dateKey)();
+    const hasNew = a1_ts_1.words.some(({ id }) => !state.reviews[id]);
+    const dates = Object.values(state.reviews).map(r => r.due).sort();
+    if (state.newGoal === 0 && state.reviewGoal === 0)
+        return 'Suas duas metas estão em zero. Ajuste a meta e verifique as palavras disponíveis.';
+    if (state.newGoal === 0 && hasNew)
+        return 'Não há revisão na sessão. Sua meta de palavras novas está em zero. Ajuste a meta para praticar palavras novas.';
+    if (state.reviewGoal === 0 && dates.length)
+        return 'Todas as palavras já foram apresentadas. Ajuste sua meta de revisões para praticá-las novamente.';
+    const next = dates.find(d => d > today);
+    return next ? 'Nenhuma revisão está prevista para hoje. Próxima revisão: ' + next.split('-').reverse().join('/') + '.' : 'Não há palavras disponíveis agora. Volte mais tarde para revisar.';
 }
 },"browser":function(require,exports){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -317,6 +352,7 @@ exports.openVocabulary = openVocabulary;
 const a1_ts_1 = require("./a1.ts");
 const study_ts_1 = require("./study.ts");
 const audio_ts_1 = require("./audio.ts");
+const daily_ts_1 = require("./daily.ts");
 const esc = (s) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const button = (label, action, id = '', extra = '') => `<button type="button" data-v-action="${action}" data-v-id="${esc(id)}" ${extra}>${label}</button>`;
 function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
@@ -346,7 +382,7 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
     } };
     const warning = () => available ? '' : '<p role="alert">O navegador não está salvando esta prática. Seus dados podem se perder ao fechar.</p>';
     const status = `<p class="mt-v-audio" data-v-audio role="status"></p>${button('Parar áudio', 'stop', '', 'hidden')}`;
-    const controls = (id, bilingual = false) => `<div class="mt-v-row">${button(bilingual ? 'Ouvir inglês → português → inglês' : 'Ouvir pronúncia', 'audio', id, bilingual ? 'data-v-bilingual' : '')}${button('Velocidade: ' + (slow ? 'devagar' : 'normal'), 'speed', '', `aria-pressed="${slow}"`)}</div>`;
+    const controls = (id, bilingual = false) => `<div class="mt-v-row">${button(bilingual ? 'Ouvir inglês → português → inglês' : 'Ouvir pronúncia', 'audio', id, bilingual ? 'data-v-bilingual' : '')}${bilingual ? button('Ouvir só em português', 'translation', id) : ''}${button('Velocidade: ' + (slow ? 'devagar' : 'normal'), 'speed', '', `aria-pressed="${slow}"`)}</div>`;
     function results() {
         const terms = (0, a1_ts_1.lookup)(query, savedOnly ? state.saved : null);
         return `${warning()}<p role="status">${terms.length ? `${terms.length} ${terms.length === 1 ? 'resultado' : 'resultados'} nesta lista.` : 'Não encontrei essa palavra no piloto.'}</p>${terms.map(w => `<section class="c-panel mt-v-entry"><h3 lang="en" tabindex="-1">${esc(w.en)}</h3><p class="c-muted">${esc(w.group)}</p><ul>${w.senses.map(s => `<li><strong>${esc(s.pt)}</strong> <small>· ${esc(s.kind)}</small><br><span lang="en">${esc(s.enExample)}</span><br><span class="c-muted">${esc(s.ptExample)}</span></li>`).join('')}</ul><div class="mt-v-row">${button('Ouvir pronúncia', 'audio', w.id, 'aria-label="Ouvir ' + esc(w.en) + '"')}${button(state.saved.includes(w.id) ? 'Remover de Minhas Palavras' : 'Salvar em Minhas Palavras', 'save', w.id, `aria-pressed="${state.saved.includes(w.id)}"`)}${state.saved.includes(w.id) ? button('Incluir na revisão diária', 'opt-in', w.id, `aria-pressed="${state.optIn.includes(w.id)}"`) : ''}</div></section>`).join('')}`;
@@ -358,7 +394,7 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
             return `<p class="c-muted">Etapa ${session.cursor + 1} de ${session.cards.length} · ${esc(w.group)}</p><progress max="${session.cards.length}" value="${session.cursor}" aria-label="Etapas do vocabulário"></progress><section class="c-panel"><h3 lang="en" tabindex="-1">${esc(w.en)}</h3>${card.learn || revealed ? `<p><strong>${esc(sense.pt)}</strong><br><span lang="en">${esc(sense.enExample)}</span><br><span class="c-muted">${esc(sense.ptExample)}</span></p>` : '<p>Faça uma pausa. Você lembra o significado?</p>'}${controls(w.id, card.learn)}${status}<div class="mt-v-row">${card.learn ? button('Próxima palavra', 'next', w.id) : revealed ? button('Ainda não lembrei', 'again', w.id) + button('Lembrei', 'remember', w.id) : button('Mostrar significado', 'reveal', w.id)}</div></section>`;
         }
         const finished = showCard && !!session, empty = finished && !session.cards.length;
-        return `${finished ? `<p role="status">${empty ? 'Nenhuma palavra para praticar nesta sessão.' : 'Sessão concluída. Volte quando quiser; as revisões serão programadas.'}</p>` : ''}${warning()}<p>Meta padrão: 10 palavras novas e 5 revisões em cerca de cinco minutos. No sábado e domingo, só revisões. Se perder um dia, continue de onde parou.</p>${!finished ? button(pendingSession() ? 'Retomar sessão' : 'Começar sessão', 'start') : ''}<details><summary>Ajustar minha meta</summary><div class="mt-v-row"><label>Novas por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="new" value="${state.newGoal}"></label><label>Revisões por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="review" value="${state.reviewGoal}"></label></div>${button('Salvar meta', 'goals')}<p class="c-muted">As metas valem para a próxima sessão. As palavras salvas que você escolher entram primeiro, dentro da meta de novidades.</p><p data-v-goal-status role="status"></p></details>`;
+        return `${finished ? `<p role="status">${empty ? (0, daily_ts_1.emptyPracticeMessage)(state) : 'Sessão concluída. Volte quando quiser; as revisões serão programadas.'}</p>` : ''}${warning()}<p>Meta padrão: 10 palavras novas e 5 revisões em cerca de cinco minutos. No fim de semana, você pode aprender palavras novas se não houver revisão na sessão. Se perder um dia, continue de onde parou.</p>${!finished || empty ? button(pendingSession() ? 'Retomar sessão' : empty ? 'Verificar palavras disponíveis' : 'Começar sessão', 'start') : ''}<details><summary>Ajustar minha meta</summary><div class="mt-v-row"><label>Novas por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="new" value="${state.newGoal}"></label><label>Revisões por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="review" value="${state.reviewGoal}"></label></div>${button('Salvar meta', 'goals')}<p class="c-muted">As metas valem para a próxima sessão. As palavras salvas que você escolher entram primeiro, dentro da meta de novidades.</p><p data-v-goal-status role="status"></p></details>`;
     }
     function render() {
         const dictionary = view === 'dictionary';
@@ -391,6 +427,12 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
         if (a === 'stop') {
             stopPlayback();
             target.querySelector('[data-v-action=audio]')?.focus({ preventScroll: true });
+            return;
+        }
+        if (a === 'translation') {
+            const w = a1_ts_1.wordById.get(id);
+            if (w)
+                void audio.translate(w, slow ? .72 : 1);
             return;
         }
         if (a === 'audio') {
