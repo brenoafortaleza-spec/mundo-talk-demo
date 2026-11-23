@@ -270,63 +270,23 @@ function vocabularyAudio(report) {
             }
         });
     }
-    function portuguese(word, rate, signal) {
-        return new Promise(resolve => {
-            const synth = window.speechSynthesis;
-            const voice = synth?.getVoices().find(v => v.localService && v.lang.toLowerCase().replace('_', '-') === 'pt-br');
-            if (!voice || typeof SpeechSynthesisUtterance === 'undefined') {
-                resolve(false);
-                return;
-            }
-            const utterance = new SpeechSynthesisUtterance(word.senses[0].pt.split(';')[0]);
-            utterance.voice = voice;
-            utterance.lang = 'pt-BR';
-            utterance.rate = rate;
-            let done = false;
-            const finish = (ok) => { if (done)
-                return; done = true; clearTimeout(timer); utterance.onend = null; utterance.onerror = null; signal.removeEventListener('abort', abort); resolve(ok); };
-            const abort = () => { finish(false); synth.cancel(); };
-            const timer = setTimeout(abort, 5000);
-            signal.addEventListener('abort', abort, { once: true });
-            utterance.onend = () => finish(true);
-            utterance.onerror = () => finish(false);
-            try {
-                synth.speak(utterance);
-            }
-            catch {
-                finish(false);
-            }
-        });
-    }
-    const noTranslation = 'A voz em português não tocou. Confira a tradução na tela ou ative uma voz local Português (Brasil) no aparelho.';
     async function play(word, rate, bilingual) {
         const signal = start();
-        // Start the first playback synchronously in the tap handler; reuse the same player for the replay.
+        // One tap starts one complete file; no device speech engine or autoplay is needed.
         const media = player ??= new Audio();
-        const path = './audio/' + encodeURIComponent(word.id) + '.mp3';
+        const path = (bilingual ? './audio-neural/' : './audio/') + encodeURIComponent(word.id) + '.mp3';
         if (media.getAttribute('src') !== path)
             media.src = path;
         media.playbackRate = rate;
         media.preservesPitch = true;
-        let result = await clip(media, signal), translated = true;
-        if (result === 'ok' && bilingual && !signal.aborted) {
-            translated = await portuguese(word, rate, signal);
-            if (!signal.aborted)
-                result = await clip(media, signal);
-        }
+        const result = await clip(media, signal);
         if (signal.aborted)
             return;
         report(result === 'blocked' ? 'O navegador bloqueou a reprodução. Toque no botão de áudio para tentar novamente.' :
             result === 'unavailable' ? 'O áudio não carregou. Confira a conexão e toque para tentar novamente.' :
-                !translated ? 'O inglês tocou. Se quiser tentar a tradução, toque em “Ouvir só em português”.' : 'Áudio concluído. Você pode ouvir de novo.');
+                'Áudio concluído. Você pode ouvir de novo.');
     }
-    async function translate(word, rate) {
-        const signal = start();
-        const ok = await portuguese(word, rate, signal);
-        if (!signal.aborted)
-            report(ok ? 'Tradução reproduzida. Você pode ouvir de novo.' : noTranslation);
-    }
-    return { stop, play, translate };
+    return { stop, play };
 }
 },"daily":function(require,exports){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -382,7 +342,7 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
     } };
     const warning = () => available ? '' : '<p role="alert">O navegador não está salvando esta prática. Seus dados podem se perder ao fechar.</p>';
     const status = `<p class="mt-v-audio" data-v-audio role="status"></p>${button('Parar áudio', 'stop', '', 'hidden')}`;
-    const controls = (id, bilingual = false) => `<div class="mt-v-row">${button(bilingual ? 'Ouvir inglês → português → inglês' : 'Ouvir pronúncia', 'audio', id, bilingual ? 'data-v-bilingual' : '')}${bilingual ? button('Ouvir só em português', 'translation', id) : ''}${button('Velocidade: ' + (slow ? 'devagar' : 'normal'), 'speed', '', `aria-pressed="${slow}"`)}</div>`;
+    const controls = (id, bilingual = false) => `<div class="mt-v-row">${button(bilingual ? 'Ouvir inglês → português → inglês' : 'Ouvir pronúncia', 'audio', id, bilingual ? 'data-v-bilingual' : '')}${button('Velocidade: ' + (slow ? 'devagar' : 'normal'), 'speed', '', `aria-pressed="${slow}"`)}</div>`;
     function results() {
         const terms = (0, a1_ts_1.lookup)(query, savedOnly ? state.saved : null);
         return `${warning()}<p role="status">${terms.length ? `${terms.length} ${terms.length === 1 ? 'resultado' : 'resultados'} nesta lista.` : 'Não encontrei essa palavra no piloto.'}</p>${terms.map(w => `<section class="c-panel mt-v-entry"><h3 lang="en" tabindex="-1">${esc(w.en)}</h3><p class="c-muted">${esc(w.group)}</p><ul>${w.senses.map(s => `<li><strong>${esc(s.pt)}</strong> <small>· ${esc(s.kind)}</small><br><span lang="en">${esc(s.enExample)}</span><br><span class="c-muted">${esc(s.ptExample)}</span></li>`).join('')}</ul><div class="mt-v-row">${button('Ouvir pronúncia', 'audio', w.id, 'aria-label="Ouvir ' + esc(w.en) + '"')}${button(state.saved.includes(w.id) ? 'Remover de Minhas Palavras' : 'Salvar em Minhas Palavras', 'save', w.id, `aria-pressed="${state.saved.includes(w.id)}"`)}${state.saved.includes(w.id) ? button('Incluir na revisão diária', 'opt-in', w.id, `aria-pressed="${state.optIn.includes(w.id)}"`) : ''}</div></section>`).join('')}`;
@@ -427,12 +387,6 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
         if (a === 'stop') {
             stopPlayback();
             target.querySelector('[data-v-action=audio]')?.focus({ preventScroll: true });
-            return;
-        }
-        if (a === 'translation') {
-            const w = a1_ts_1.wordById.get(id);
-            if (w)
-                void audio.translate(w, slow ? .72 : 1);
             return;
         }
         if (a === 'audio') {
