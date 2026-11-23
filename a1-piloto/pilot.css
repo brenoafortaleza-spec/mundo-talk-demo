@@ -5,6 +5,33 @@ body{margin:0}header,main{max-width:61rem;margin:auto;padding:.75rem 1rem}a{colo
 
 .course-app .mt-v-heading{border:0;margin:0;max-width:none}.mt-vocabulary{color-scheme:dark}.mt-vocabulary label{color:var(--ink)}
 
+/* The listening player is independent of the lessons and dictionary. */
+.course-app .mt-listen{--surface:#15293e;max-width:29rem;padding:0 clamp(.75rem,4vw,1.35rem) .85rem;font:1rem/1.4 system-ui}
+.mt-listen .mt-v-heading{padding-inline:0}
+.mt-listen-track{display:grid;gap:.55rem}
+.mt-listen-count,.mt-listen-controls,.mt-listen-options{display:flex;align-items:center;justify-content:center;gap:.65rem}
+.mt-listen-count{justify-content:space-between;gap:.35rem;color:var(--muted);font-size:.81rem;flex-wrap:wrap}
+.mt-listen progress{height:.6rem;accent-color:var(--accent)}
+.mt-listen-card,.mt-listen-intro{display:grid;justify-items:center;gap:.35rem;text-align:center}
+.mt-listen-card{border:1px solid #46627b;border-radius:1rem;padding:.8rem .5rem;background:#102236}
+.mt-listen .c-lesson-emily{display:block;width:40px;height:40px}
+.mt-listen-card h3,.mt-listen-card p,.mt-listen-intro p{margin:0}
+.mt-listen-card h3{font-size:clamp(1.75rem,8vw,2.75rem);line-height:1.1;letter-spacing:-.02em}
+.mt-listen-translation{color:var(--accent);font-size:1.1rem;font-weight:650}
+.mt-listen-example,.mt-listen-status{color:var(--muted);font-size:.88rem}
+.mt-listen-status{margin:0}.mt-listen-status:empty{display:none}
+.mt-listen-controls button{width:50px;padding:0;font-size:1.65rem;line-height:1}
+.mt-listen-controls button:disabled{opacity:.45}
+.mt-listen button.mt-listen-play,.mt-listen button.mt-listen-start{background:var(--accent);color:#1d2230;border:1px solid var(--accent);font-weight:750}
+.mt-listen button.mt-listen-play{border-radius:100%;width:68px;height:68px}
+.mt-listen-intro{padding:.9rem 0;gap:.75rem}
+.mt-listen-options button{background:transparent;min-height:44px;font-size:.87rem;color:var(--ink)}
+.mt-listen summary{display:list-item;cursor:pointer;min-height:44px;padding:.6rem .15rem;box-sizing:border-box;color:var(--muted);font-size:.9rem}
+.mt-listen-settings{margin-top:.35rem;border-top:1px solid #46627b}
+.mt-listen-settings label{min-width:0;flex:1}
+.mt-listen-settings input[type=number]{width:min(100%,6rem);display:block;box-sizing:border-box}
+@media(max-height:500px){.mt-listen-card .c-lesson-emily{width:28px;height:28px}.mt-listen-card{padding:.4rem}.mt-listen button.mt-listen-play{width:54px;height:54px}}
+
 .course-app .mt-v-row,.course-app .mt-v-tabs{display:flex;flex-wrap:wrap;gap:.5rem;margin-block:.5rem;align-items:center}
 .course-app .mt-v-row button,.course-app .mt-v-tabs button,.course-app .mt-v-lesson-link,.course-app .mt-v-heading button{min-height:44px;white-space:normal;text-align:left}
 .course-app .mt-v-menu{margin-block:1rem}.course-app .mt-v-menu h2{margin-top:0}

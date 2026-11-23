@@ -306,16 +306,330 @@ function emptyPracticeMessage(state) {
     const next = dates.find(d => d > today);
     return next ? 'Nenhuma revisão está prevista para hoje. Próxima revisão: ' + next.split('-').reverse().join('/') + '.' : 'Não há palavras disponíveis agora. Volte mais tarde para revisar.';
 }
+},"listening":function(require,exports){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.markHeard = markHeard;
+exports.openListening = openListening;
+const a1_ts_1 = require("./a1.ts");
+const study_ts_1 = require("./study.ts");
+const daily_ts_1 = require("./daily.ts");
+const PAUSE_MS = 1200;
+const esc = (s) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const b = (action, label, extra = '') => `<button type="button" data-listen="${action}" ${extra}>${label}</button>`;
+function markHeard(s, index, mark, now = new Date()) {
+    const card = s.session?.cards[index];
+    if (!card || index !== s.session?.cursor)
+        return s;
+    if (card.learn)
+        return (0, study_ts_1.finishCard)(s, card.id, undefined, now);
+    if (mark !== 'heard')
+        return (0, study_ts_1.finishCard)(s, card.id, mark === 'remember', now);
+    // An ungraded listen is practice, never proof the learner recalled the word.
+    const next = (0, study_ts_1.finishCard)(s, card.id, false, now), old = s.reviews[card.id];
+    return { ...next, reviews: { ...next.reviews, [card.id]: { ...next.reviews[card.id], step: old?.step ?? 0, lapses: old?.lapses ?? 0 } } };
+}
+function readQueue(raw, s) {
+    const session = s.session;
+    const key = session ? JSON.stringify([session.day, session.cards]) : '';
+    const cursor = session?.cursor ?? 0, max = session?.cards.length ?? 0;
+    const clean = { key, current: cursor, heard: {} };
+    try {
+        const old = JSON.parse(raw ?? 'null');
+        if (old?.key !== key)
+            return clean;
+        if (Number.isInteger(old.current) && old.current >= 0 && old.current < max && cursor < max)
+            clean.current = old.current;
+        for (let i = cursor; i < max; i++)
+            if (['heard', 'remember', 'again'].includes(old.heard?.[i]))
+                clean.heard[i] = old.heard[i];
+    }
+    catch { }
+    return clean;
+}
+function openListening(parent, scope, onClose = () => { }) {
+    const title = 'Escute e Memorize';
+    const target = document.createElement('dialog');
+    target.className = 'mt-vocabulary mt-listen';
+    target.setAttribute('aria-labelledby', 'mt-listen-title');
+    const initiator = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    parent.append(target);
+    const key = (0, study_ts_1.vocabularyStorageKey)(scope), queueKey = key + ':player';
+    let raw = null, qRaw = null, canSave = true;
+    try {
+        raw = localStorage.getItem(key);
+        qRaw = localStorage.getItem(queueKey);
+    }
+    catch {
+        canSave = false;
+    }
+    let state = raw === null ? (0, study_ts_1.freshVocabulary)() : (0, study_ts_1.readVocabulary)(raw), queue = readQueue(qRaw, state);
+    let begun = false, running = false, gap = false, slow = false, error = '', rating = 'heard', turn = 0;
+    let timer, player;
+    const card = () => begun ? state.session?.cards[queue.current] : undefined;
+    const pending = () => !!state.session && state.session.cursor < state.session.cards.length;
+    function save() {
+        try {
+            localStorage.setItem(queueKey, JSON.stringify(queue));
+            localStorage.setItem(key, JSON.stringify(state));
+        }
+        catch {
+            canSave = false;
+        }
+    }
+    function flush() {
+        while (state.session && queue.heard[state.session.cursor]) {
+            const cursor = state.session.cursor;
+            state = markHeard(state, cursor, queue.heard[cursor]);
+            delete queue.heard[cursor];
+        }
+    }
+    function stop(keepClip = false) {
+        turn++;
+        if (timer !== undefined)
+            clearTimeout(timer);
+        timer = undefined;
+        running = false;
+        if (player) {
+            player.onended = null;
+            player.onerror = null;
+            player.pause();
+            if (!keepClip && player.currentTime)
+                player.currentTime = 0;
+        }
+        if (!keepClip) {
+            gap = false;
+            rating = 'heard';
+        }
+    }
+    const header = `<header class="mt-v-heading"><h2 id="mt-listen-title" tabindex="-1">${title}</h2>${b('close', 'Fechar')}</header>`;
+    function settings() {
+        return `<details class="mt-listen-settings"><summary>Configurações</summary><div class="mt-v-row"><label>Novas por dia<input type="number" inputmode="numeric" min="0" max="10" data-l-goal="new" value="${state.newGoal}"></label><label>Revisões por dia<input type="number" inputmode="numeric" min="0" max="10" data-l-goal="review" value="${state.reviewGoal}"></label></div>${b('goals', 'Salvar meta')}<p data-l-goal-status role="status"></p></details>`;
+    }
+    function render(focus) {
+        const previous = target.contains(document.activeElement) ? document.activeElement?.dataset?.listen : undefined;
+        const warning = canSave ? '' : '<p role="alert">Não foi possível salvar o progresso neste navegador.</p>';
+        const c = card(), s = state.session;
+        if (!c || !s) {
+            const message = begun ? (s?.cards.length ? 'Sessão concluída. Até a próxima!' : (0, daily_ts_1.emptyPracticeMessage)(state)) : 'Dê o play e pratique no seu ritmo.';
+            target.innerHTML = header + `<div class="mt-listen-intro"><span class="c-lesson-emily" role="img" aria-label="Emily"></span><p role="status">${message}</p>${!begun || !s?.cards.length ? b('start', pending() ? '▶ Retomar sessão' : begun ? '▶ Verificar palavras disponíveis' : '▶ Começar sessão', 'class="mt-listen-start"') : ''}</div>` + warning + settings();
+        }
+        else {
+            const w = a1_ts_1.wordById.get(c.id), sense = w.senses[0];
+            const done = s.cursor + Object.keys(queue.heard).length;
+            const label = running ? 'Pausar' : error ? 'Tentar novamente' : 'Reproduzir';
+            const reveal = c.learn || gap;
+            target.innerHTML = header + `<section class="mt-listen-track" aria-label="Palavra da vez">
+   <div class="mt-listen-count"><span>${c.learn ? 'Aprender' : 'Revisar'} · ${queue.current + 1} de ${s.cards.length}</span><span>${done}/${s.cards.length} ouvidas</span></div>
+   <progress value="${done}" max="${s.cards.length}" aria-label="Progresso da sessão"></progress>
+   <div class="mt-listen-card"><span class="c-lesson-emily" role="img" aria-label="Emily"></span><h3 lang="en" tabindex="-1">${esc(w.en)}</h3>
+   ${reveal ? `<p class="mt-listen-translation" lang="pt-BR">${esc(sense.pt)}</p>${sense.enExample ? `<p class="mt-listen-example" lang="en">${esc(sense.enExample)}</p>` : ''}` : '<p class="mt-listen-translation">Lembra o significado?</p>'}</div>
+   <div class="mt-listen-controls">${b('previous', '‹', 'aria-label="Palavra anterior" ' + (queue.current === 0 ? 'disabled' : ''))}
+   ${b('toggle', running ? '❚❚' : '▶', `class="mt-listen-play" aria-label="${label}"`)}
+   ${b('next', '›', 'aria-label="Próxima palavra" ' + (queue.current + 1 >= s.cards.length ? 'disabled' : ''))}</div>
+   <div class="mt-listen-options">${b('repeat', '↻ Repetir', 'aria-label="Repetir palavra"')}${b('speed', slow ? '0,75×' : '1×', `aria-label="Velocidade: ${slow ? 'lenta' : 'normal'}" aria-pressed="${slow}"`)}</div>
+   ${!c.learn && queue.current >= s.cursor && queue.heard[queue.current] === undefined && !gap ? `<details class="mt-listen-selfcheck"><summary>Como foi a revisão?</summary><div class="mt-v-row">${b('remember', 'Lembrei', `aria-pressed="${rating === 'remember'}"`)}${b('again', 'Rever amanhã', `aria-pressed="${rating === 'again'}"`)}</div></details>` : ''}
+   <p class="mt-listen-status" role="status">${error || ''}</p></section>` + warning + settings();
+        }
+        const want = focus || previous;
+        if (want)
+            (target.querySelector(`[data-listen="${want}"]:not(:disabled)`) ?? target.querySelector('[data-listen="toggle"],[data-listen="start"],h2'))?.focus({ preventScroll: true });
+    }
+    function advance(autoplay) {
+        const s = state.session;
+        if (!s)
+            return;
+        stop();
+        error = '';
+        if (autoplay && s.cursor >= s.cards.length) {
+            queue.current = s.cursor;
+            save();
+            render();
+            return;
+        }
+        if (queue.current + 1 < s.cards.length) {
+            queue.current++;
+            save();
+            if (autoplay)
+                play();
+            else
+                render();
+        }
+        else if (pending()) {
+            queue.current = s.cursor;
+            error = 'Ainda há palavras para ouvir. Toque para continuar.';
+            save();
+            render();
+        }
+        else {
+            queue.current = s.cursor;
+            save();
+            render();
+        }
+    }
+    function play(focus) {
+        const c = card();
+        if (!c)
+            return;
+        if (gap) {
+            advance(true);
+            return;
+        }
+        const media = player ??= new Audio();
+        const path = './audio-neural/' + encodeURIComponent(c.id) + '.mp3';
+        if (media.getAttribute('src') !== path) {
+            media.src = path;
+        }
+        media.playbackRate = slow ? .75 : 1;
+        media.preservesPitch = true;
+        const ticket = ++turn;
+        running = true;
+        error = '';
+        const fail = (reason) => {
+            if (ticket !== turn || !running || gap)
+                return;
+            stop(false);
+            error = reason instanceof Error && reason.name === 'NotAllowedError' ? 'Toque em reproduzir para continuar.' : 'Não foi possível tocar. Toque para tentar novamente.';
+            render();
+        };
+        media.onerror = fail;
+        media.onended = () => {
+            if (ticket !== turn || !running || gap)
+                return;
+            gap = true;
+            if (state.session && queue.current >= state.session.cursor && queue.heard[queue.current] === undefined) {
+                queue.heard[queue.current] = rating;
+                flush();
+                save();
+            }
+            render();
+            timer = setTimeout(() => { if (ticket === turn && running)
+                advance(true); }, PAUSE_MS);
+        };
+        try {
+            void media.play().catch(fail);
+        }
+        catch (reason) {
+            fail(reason);
+        }
+        render(focus);
+    }
+    function start() {
+        const next = (0, study_ts_1.startVocabulary)(state);
+        if (next.session !== state.session) {
+            state = next;
+            queue = readQueue(null, state);
+        }
+        flush();
+        begun = true;
+        save();
+        if (card())
+            play('toggle');
+        else
+            render();
+    }
+    const hidden = () => { if (document.hidden && running) {
+        stop(true);
+        render();
+    } };
+    document.addEventListener('visibilitychange', hidden);
+    target.addEventListener('close', () => { stop(); document.removeEventListener('visibilitychange', hidden); target.remove(); if (initiator?.isConnected)
+        initiator.focus({ preventScroll: true }); onClose(); }, { once: true });
+    target.addEventListener('click', event => {
+        const action = event.target.closest('[data-listen]')?.dataset.listen;
+        if (!action)
+            return;
+        if (action === 'close') {
+            target.close();
+            return;
+        }
+        if (action === 'goals') {
+            const n = target.querySelector('[data-l-goal="new"]'), r = target.querySelector('[data-l-goal="review"]'), note = target.querySelector('[data-l-goal-status]');
+            if (!n?.value || !r?.value || !n.checkValidity() || !r.checkValidity()) {
+                if (note)
+                    note.textContent = 'Escolha números inteiros de 0 a 10.';
+                return;
+            }
+            state = (0, study_ts_1.configure)(state, n.valueAsNumber, r.valueAsNumber);
+            save();
+            if (note)
+                note.textContent = canSave ? 'Meta salva para a próxima sessão.' : 'Meta válida só nesta janela.';
+            return;
+        }
+        if (action === 'start') {
+            start();
+            return;
+        }
+        if (action === 'speed') {
+            slow = !slow;
+            if (player)
+                player.playbackRate = slow ? .75 : 1;
+            render('speed');
+            return;
+        }
+        if (action === 'remember' || action === 'again') {
+            if (gap)
+                return;
+            rating = action;
+            for (const k of ['remember', 'again'])
+                target.querySelector(`[data-listen="${k}"]`)?.setAttribute('aria-pressed', String(k === rating));
+            return;
+        }
+        if (action === 'toggle') {
+            if (running) {
+                stop(true);
+                render('toggle');
+            }
+            else
+                play('toggle');
+            return;
+        }
+        if (action === 'repeat') {
+            stop();
+            error = '';
+            play('repeat');
+            return;
+        }
+        if (action === 'previous' && queue.current > 0) {
+            const autoplay = running;
+            stop();
+            error = '';
+            queue.current--;
+            save();
+            if (autoplay)
+                play('previous');
+            else
+                render('previous');
+            return;
+        }
+        if (action === 'next' && state.session && queue.current + 1 < state.session.cards.length)
+            advance(running);
+    });
+    target.addEventListener('toggle', event => {
+        const details = event.target;
+        if (details.open && details.classList?.contains('mt-listen-settings') && running) {
+            stop(true);
+            const control = target.querySelector('[data-listen="toggle"]');
+            if (control) {
+                control.textContent = '▶';
+                control.setAttribute('aria-label', 'Reproduzir');
+            }
+        }
+    }, true);
+    render();
+    target.showModal();
+    target.querySelector('h2')?.focus();
+    return () => { if (target.open)
+        target.close(); };
+}
 },"browser":function(require,exports){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.openVocabulary = openVocabulary;
 const a1_ts_1 = require("./a1.ts");
 const study_ts_1 = require("./study.ts");
 const audio_ts_1 = require("./audio.ts");
-const daily_ts_1 = require("./daily.ts");
 const esc = (s) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const button = (label, action, id = '', extra = '') => `<button type="button" data-v-action="${action}" data-v-id="${esc(id)}" ${extra}>${label}</button>`;
-function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
+function openVocabulary(parent, scope, view, query = '', onClose = () => { }, onListen) {
     const target = document.createElement('dialog');
     target.className = 'mt-vocabulary';
     target.setAttribute('aria-labelledby', 'mt-v-title');
@@ -354,7 +668,7 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
             return `<p class="c-muted">Etapa ${session.cursor + 1} de ${session.cards.length} · ${esc(w.group)}</p><progress max="${session.cards.length}" value="${session.cursor}" aria-label="Etapas do vocabulário"></progress><section class="c-panel"><h3 lang="en" tabindex="-1">${esc(w.en)}</h3>${card.learn || revealed ? `<p><strong>${esc(sense.pt)}</strong><br><span lang="en">${esc(sense.enExample)}</span><br><span class="c-muted">${esc(sense.ptExample)}</span></p>` : '<p>Faça uma pausa. Você lembra o significado?</p>'}${controls(w.id, card.learn)}${status}<div class="mt-v-row">${card.learn ? button('Próxima palavra', 'next', w.id) : revealed ? button('Ainda não lembrei', 'again', w.id) + button('Lembrei', 'remember', w.id) : button('Mostrar significado', 'reveal', w.id)}</div></section>`;
         }
         const finished = showCard && !!session, empty = finished && !session.cards.length;
-        return `${finished ? `<p role="status">${empty ? (0, daily_ts_1.emptyPracticeMessage)(state) : 'Sessão concluída. Volte quando quiser; as revisões serão programadas.'}</p>` : ''}${warning()}<p>Meta padrão: 10 palavras novas e 5 revisões em cerca de cinco minutos. No fim de semana, você pode aprender palavras novas se não houver revisão na sessão. Se perder um dia, continue de onde parou.</p>${!finished || empty ? button(pendingSession() ? 'Retomar sessão' : empty ? 'Verificar palavras disponíveis' : 'Começar sessão', 'start') : ''}<details><summary>Ajustar minha meta</summary><div class="mt-v-row"><label>Novas por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="new" value="${state.newGoal}"></label><label>Revisões por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="review" value="${state.reviewGoal}"></label></div>${button('Salvar meta', 'goals')}<p class="c-muted">As metas valem para a próxima sessão. As palavras salvas que você escolher entram primeiro, dentro da meta de novidades.</p><p data-v-goal-status role="status"></p></details>`;
+        return `${finished ? `<p role="status">${empty ? 'Nenhuma palavra para praticar nesta sessão.' : 'Sessão concluída. Volte quando quiser; as revisões serão programadas.'}</p>` : ''}${warning()}<p>Meta padrão: 10 palavras novas e 5 revisões em cerca de cinco minutos. No sábado e domingo, só revisões. Se perder um dia, continue de onde parou.</p>${!finished ? button(pendingSession() ? 'Retomar sessão' : 'Começar sessão', 'start') : ''}<details><summary>Ajustar minha meta</summary><div class="mt-v-row"><label>Novas por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="new" value="${state.newGoal}"></label><label>Revisões por dia<input type="number" inputmode="numeric" min="0" max="10" data-v-goal="review" value="${state.reviewGoal}"></label></div>${button('Salvar meta', 'goals')}<p class="c-muted">As metas valem para a próxima sessão. As palavras salvas que você escolher entram primeiro, dentro da meta de novidades.</p><p data-v-goal-status role="status"></p></details>`;
     }
     function render() {
         const dictionary = view === 'dictionary';
@@ -414,6 +728,11 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
                 notice.textContent = available ? 'Meta salva para a próxima sessão.' : 'Meta válida só até fechar esta janela.';
             return;
         }
+        if (a === 'listen' && onListen) {
+            target.close();
+            onListen();
+            return;
+        }
         if (a === 'dictionary' || a === 'listen') {
             view = a;
             render();
@@ -459,14 +778,22 @@ function openVocabulary(parent, scope, view, query = '', onClose = () => { }) {
     else
         target.remove(); };
 }
-}},cache=new Map();const require=path=>{const id=path.replace(/^\.\//,'').replace(/\.ts$/,'');if(cache.has(id))return cache.get(id);const exports={};cache.set(id,exports);modules[id](require,exports);return exports;};const {openVocabulary}=require('browser');// Public demonstration only. Personal details are neither requested nor transmitted.
+}},cache=new Map();const require=path=>{const id=path.replace(/^\.\//,'').replace(/\.ts$/,'');if(cache.has(id))return cache.get(id);const exports={};cache.set(id,exports);modules[id](require,exports);return exports;};const {openVocabulary}=require('browser');const {openListening}=require('listening');// Public demonstration only. Personal details are neither requested nor transmitted.
 const mount=document.querySelector('[data-public-tools]');
 let closePanel;
+const openPanel=view=>{
+ const parent=document.querySelector('.course-app'),scope='a1-public-pages-v1';
+ const closed=()=>{if(closePanel===handle)closePanel=undefined;};
+ const handle=view==='listen'?openListening(parent,scope,closed):openVocabulary(parent,scope,view,'',closed,()=>{
+  closePanel=undefined;openPanel('listen');
+ });
+ closePanel=handle;
+};
 mount.addEventListener('click',event=>{
  const button=event.target.closest('[data-open-vocabulary]');
  if(!button||closePanel)return;
  document.dispatchEvent(new Event('mt-preview-vocab'));
- closePanel=openVocabulary(document.querySelector('.course-app'),'a1-public-pages-v1',button.dataset.openVocabulary,'',()=>{closePanel=undefined;});
+ openPanel(button.dataset.openVocabulary);
 });
 const writing=document.querySelector('[data-writing]');
 if(writing){
